@@ -24,6 +24,7 @@ import { adminStore } from '../services/adminStore';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import { loadStripe } from '@stripe/stripe-js';
 import confetti from 'canvas-confetti';
+import { PaymentSuccessModal, ConfirmedOrderData } from '../components/PaymentSuccessModal';
 
 interface ReviewOrderPageProps {
   selectedPlanId: ReportPlanId;
@@ -171,6 +172,8 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMethod, setProcessingMethod] = useState<string>('');
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [confirmedOrder, setConfirmedOrder] = useState<ConfirmedOrderData | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Validation
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -343,7 +346,7 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
       const last4 = stripeData.card?.last4 || cleanCard.slice(-4);
       const paymentRef = stripeData.id;
 
-      adminStore.saveOrder({
+      const newOrder = adminStore.saveOrder({
         vin: displayVin,
         vehicleName: `${report?.specs?.year || 2021} ${report?.specs?.make || 'Vehicle'} ${report?.specs?.model || ''}`.trim(),
         customerName: fullName.trim(),
@@ -353,9 +356,10 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
         packageId: plan.id,
         packageName: plan.name,
         amount: plan.price,
+        deliveryTime: plan.deliveryTime || '6 HOURS DELIVERY',
         paymentMethod: `Stripe ${brand} [•••• ${last4}] (Ref: ${paymentRef})`,
         paymentStatus: 'Paid',
-        deliveryStatus: 'Emailed & Completed',
+        deliveryStatus: 'Pending Manual Send',
         reportSummary: {
           specsFound: report?.recordsFoundCount || 48,
           titleStatus: 'Clean Title (NMVTIS Verified)',
@@ -366,17 +370,21 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
 
       setIsProcessing(false);
       setPaymentSuccess(true);
-      try {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      } catch {}
-
-      setTimeout(() => {
-        onPaymentSuccess(plan.id);
-      }, 1500);
+      setConfirmedOrder({
+        orderNumber: newOrder.orderNumber,
+        vin: newOrder.vin,
+        vehicleName: newOrder.vehicleName,
+        customerName: newOrder.customerName,
+        email: newOrder.email,
+        phone: newOrder.phone,
+        packageName: newOrder.packageName,
+        packageId: newOrder.packageId,
+        amount: newOrder.amount,
+        paymentMethod: newOrder.paymentMethod,
+        deliveryTime: newOrder.deliveryTime || plan.deliveryTime || '6 HOURS DELIVERY',
+        createdAt: newOrder.createdAt,
+      });
+      setShowSuccessModal(true);
     } catch (err: any) {
       setIsProcessing(false);
       setPaymentError({
@@ -409,7 +417,7 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
 
       await new Promise((resolve) => setTimeout(resolve, 900));
 
-      adminStore.saveOrder({
+      const newOrder = adminStore.saveOrder({
         vin: displayVin,
         vehicleName: `${report?.specs?.year || 2021} ${report?.specs?.make || 'Vehicle'} ${report?.specs?.model || ''}`.trim(),
         customerName: fullName.trim(),
@@ -419,9 +427,10 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
         packageId: plan.id,
         packageName: plan.name,
         amount: plan.price,
+        deliveryTime: plan.deliveryTime || '6 HOURS DELIVERY',
         paymentMethod: 'Stripe Link (1-Click Instant)',
         paymentStatus: 'Paid',
-        deliveryStatus: 'Emailed & Completed',
+        deliveryStatus: 'Pending Manual Send',
         reportSummary: {
           specsFound: report?.recordsFoundCount || 48,
           titleStatus: 'Clean Title (NMVTIS Verified)',
@@ -432,17 +441,21 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
 
       setIsProcessing(false);
       setPaymentSuccess(true);
-      try {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      } catch {}
-
-      setTimeout(() => {
-        onPaymentSuccess(plan.id);
-      }, 1500);
+      setConfirmedOrder({
+        orderNumber: newOrder.orderNumber,
+        vin: newOrder.vin,
+        vehicleName: newOrder.vehicleName,
+        customerName: newOrder.customerName,
+        email: newOrder.email,
+        phone: newOrder.phone,
+        packageName: newOrder.packageName,
+        packageId: newOrder.packageId,
+        amount: newOrder.amount,
+        paymentMethod: newOrder.paymentMethod,
+        deliveryTime: newOrder.deliveryTime || plan.deliveryTime || '6 HOURS DELIVERY',
+        createdAt: newOrder.createdAt,
+      });
+      setShowSuccessModal(true);
     } catch (err: any) {
       setIsProcessing(false);
       setPaymentError({
@@ -462,7 +475,7 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
       `PAYPAL-${Date.now()}`;
 
     try {
-      adminStore.saveOrder({
+      const newOrder = adminStore.saveOrder({
         vin: displayVin,
         vehicleName: `${report?.specs?.year || 2021} ${report?.specs?.make || 'Vehicle'} ${report?.specs?.model || ''}`.trim(),
         customerName: fullName.trim() || details?.payer?.name?.given_name || 'Verified Customer',
@@ -472,9 +485,10 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
         packageId: plan.id,
         packageName: plan.name,
         amount: plan.price,
+        deliveryTime: plan.deliveryTime || '6 HOURS DELIVERY',
         paymentMethod: `PayPal Smart Checkout [${captureId}]`,
         paymentStatus: 'Paid',
-        deliveryStatus: 'Emailed & Completed',
+        deliveryStatus: 'Pending Manual Send',
         reportSummary: {
           specsFound: report?.recordsFoundCount || 48,
           titleStatus: 'Clean Title (NMVTIS Verified)',
@@ -482,22 +496,26 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
           score: report?.overallScore || 89,
         },
       });
+
+      setPaymentSuccess(true);
+      setConfirmedOrder({
+        orderNumber: newOrder.orderNumber,
+        vin: newOrder.vin,
+        vehicleName: newOrder.vehicleName,
+        customerName: newOrder.customerName,
+        email: newOrder.email,
+        phone: newOrder.phone,
+        packageName: newOrder.packageName,
+        packageId: newOrder.packageId,
+        amount: newOrder.amount,
+        paymentMethod: newOrder.paymentMethod,
+        deliveryTime: newOrder.deliveryTime || plan.deliveryTime || '6 HOURS DELIVERY',
+        createdAt: newOrder.createdAt,
+      });
+      setShowSuccessModal(true);
     } catch (err) {
       console.warn('Order save notice:', err);
     }
-
-    setPaymentSuccess(true);
-    try {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-      });
-    } catch {}
-
-    setTimeout(() => {
-      onPaymentSuccess(plan.id);
-    }, 1500);
   };
 
   // 3. Developer Sandbox Simulator
@@ -507,7 +525,7 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
     setProcessingMethod(`${methodName} (Test Sandbox)`);
 
     try {
-      adminStore.saveOrder({
+      const newOrder = adminStore.saveOrder({
         vin: displayVin,
         vehicleName: `${report?.specs?.year || 2021} ${report?.specs?.make || 'Vehicle'} ${report?.specs?.model || ''}`.trim(),
         customerName: fullName.trim(),
@@ -517,9 +535,10 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
         packageId: plan.id,
         packageName: plan.name,
         amount: plan.price,
+        deliveryTime: plan.deliveryTime || '6 HOURS DELIVERY',
         paymentMethod: `${methodName} [Dev Simulator]`,
         paymentStatus: 'Paid',
-        deliveryStatus: 'Emailed & Completed',
+        deliveryStatus: 'Pending Manual Send',
         reportSummary: {
           specsFound: report?.recordsFoundCount || 48,
           titleStatus: 'Clean Title (NMVTIS Verified)',
@@ -527,17 +546,27 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
           score: report?.overallScore || 89,
         },
       });
+
+      setIsProcessing(false);
+      setPaymentSuccess(true);
+      setConfirmedOrder({
+        orderNumber: newOrder.orderNumber,
+        vin: newOrder.vin,
+        vehicleName: newOrder.vehicleName,
+        customerName: newOrder.customerName,
+        email: newOrder.email,
+        phone: newOrder.phone,
+        packageName: newOrder.packageName,
+        packageId: newOrder.packageId,
+        amount: newOrder.amount,
+        paymentMethod: newOrder.paymentMethod,
+        deliveryTime: newOrder.deliveryTime || plan.deliveryTime || '6 HOURS DELIVERY',
+        createdAt: newOrder.createdAt,
+      });
+      setShowSuccessModal(true);
     } catch {
       // ignore
     }
-
-    setTimeout(() => {
-      setIsProcessing(false);
-      setPaymentSuccess(true);
-      setTimeout(() => {
-        onPaymentSuccess(plan.id);
-      }, 1500);
-    }, 1200);
   };
 
   return (
@@ -1213,6 +1242,19 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Payment Confirmed Success Modal */}
+      <PaymentSuccessModal
+        isOpen={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        order={confirmedOrder}
+        onNavigateHome={() => onNavigate('home')}
+        onViewReportPreview={() => {
+          setShowSuccessModal(false);
+          onPaymentSuccess(plan.id);
+        }}
+        onNavigateSupport={() => onNavigate('support')}
+      />
     </div>
   );
 };

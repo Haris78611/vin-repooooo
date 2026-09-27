@@ -16,7 +16,6 @@ interface NotFoundPageProps {
   state?: string;
   errorMessage?: string;
   onNewSearch: (query: string, type: 'vin' | 'plate', state?: string) => void;
-  onViewSampleReport: () => void;
   onBackToHome: () => void;
   onNavigate: (page: string) => void;
   isLoading: boolean;
@@ -36,7 +35,6 @@ export const NotFoundPage: React.FC<NotFoundPageProps> = ({
   state = 'CA',
   errorMessage,
   onNewSearch,
-  onViewSampleReport,
   onBackToHome,
   isLoading,
 }) => {
@@ -282,23 +280,14 @@ export const NotFoundPage: React.FC<NotFoundPageProps> = ({
             </form>
 
             {/* Quick Action Navigation links inside card */}
-            <div className="mt-5 pt-4 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <button
-                type="button"
-                onClick={onViewSampleReport}
-                className="inline-flex items-center gap-1.5 text-yellow-400 hover:text-yellow-300 font-bold transition-colors cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>View Sample Report (1998 BMW Z3 2.8L)</span>
-              </button>
-
+            <div className="mt-5 pt-4 border-t border-white/5 flex items-center justify-center text-xs">
               <button
                 type="button"
                 onClick={onBackToHome}
-                className="inline-flex items-center gap-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white font-bold transition-all cursor-pointer border border-white/10"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Back to Home</span>
+                <span>Return to Home Page</span>
               </button>
             </div>
           </div>

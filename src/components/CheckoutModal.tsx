@@ -20,6 +20,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { FullVehicleReport, ReportPlanId } from '../types';
 import { PLANS } from '../data/sampleVehicles';
 import { adminStore } from '../services/adminStore';
+import { PaymentSuccessModal, ConfirmedOrderData } from './PaymentSuccessModal';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -78,7 +79,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMethod, setProcessingMethod] = useState('');
 
+  // Payment Success Confirmation Modal state
+  const [confirmedOrder, setConfirmedOrder] = useState<ConfirmedOrderData | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
   if (!isOpen) return null;
+
+  if (showSuccessModal && confirmedOrder) {
+    return (
+      <PaymentSuccessModal
+        isOpen={showSuccessModal}
+        onClose={() => {
+          setShowSuccessModal(false);
+          onClose();
+        }}
+        order={confirmedOrder}
+        onNavigateHome={() => {
+          setShowSuccessModal(false);
+          onClose();
+        }}
+        onViewReportPreview={() => {
+          setShowSuccessModal(false);
+          onPaymentSuccess(plan.id);
+          onClose();
+        }}
+      />
+    );
+  }
 
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const isFormValid =
@@ -246,7 +273,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       const last4 = stripeData.card?.last4 || cleanCard.slice(-4);
       const paymentRef = stripeData.id;
 
-      adminStore.saveOrder({
+      const newOrder = adminStore.saveOrder({
         vin: report.specs.vin,
         vehicleName: `${report.specs.year} ${report.specs.make} ${report.specs.model}`.trim(),
         customerName: fullName.trim(),
@@ -256,9 +283,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         packageId: plan.id,
         packageName: plan.name,
         amount: plan.price,
+        deliveryTime: plan.deliveryTime || '6 HOURS DELIVERY',
         paymentMethod: `Stripe ${brand} [•••• ${last4}] (Ref: ${paymentRef})`,
         paymentStatus: 'Paid',
-        deliveryStatus: 'Emailed & Completed',
+        deliveryStatus: 'Pending Manual Send',
         reportSummary: {
           specsFound: report.recordsFoundCount || 48,
           titleStatus: 'Clean Title (NMVTIS Verified)',
@@ -268,16 +296,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       });
 
       setIsProcessing(false);
-      try {
-        confetti({
-          particleCount: 80,
-          spread: 60,
-          origin: { y: 0.6 },
-        });
-      } catch {}
-
-      onPaymentSuccess(plan.id);
-      onClose();
+      setConfirmedOrder({
+        orderNumber: newOrder.orderNumber,
+        vin: newOrder.vin,
+        vehicleName: newOrder.vehicleName,
+        customerName: newOrder.customerName,
+        email: newOrder.email,
+        phone: newOrder.phone,
+        packageName: newOrder.packageName,
+        packageId: newOrder.packageId,
+        amount: newOrder.amount,
+        paymentMethod: newOrder.paymentMethod,
+        deliveryTime: newOrder.deliveryTime || plan.deliveryTime || '6 HOURS DELIVERY',
+        createdAt: newOrder.createdAt,
+      });
+      setShowSuccessModal(true);
     } catch (err: any) {
       setIsProcessing(false);
       setPaymentError({
@@ -310,7 +343,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       await new Promise((resolve) => setTimeout(resolve, 900));
 
-      adminStore.saveOrder({
+      const newOrder = adminStore.saveOrder({
         vin: report.specs.vin,
         vehicleName: `${report.specs.year} ${report.specs.make} ${report.specs.model}`.trim(),
         customerName: fullName.trim(),
@@ -320,9 +353,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         packageId: plan.id,
         packageName: plan.name,
         amount: plan.price,
+        deliveryTime: plan.deliveryTime || '6 HOURS DELIVERY',
         paymentMethod: 'Stripe Link (1-Click Instant)',
         paymentStatus: 'Paid',
-        deliveryStatus: 'Emailed & Completed',
+        deliveryStatus: 'Pending Manual Send',
         reportSummary: {
           specsFound: report.recordsFoundCount || 48,
           titleStatus: 'Clean Title (NMVTIS Verified)',
@@ -332,16 +366,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       });
 
       setIsProcessing(false);
-      try {
-        confetti({
-          particleCount: 80,
-          spread: 60,
-          origin: { y: 0.6 },
-        });
-      } catch {}
-
-      onPaymentSuccess(plan.id);
-      onClose();
+      setConfirmedOrder({
+        orderNumber: newOrder.orderNumber,
+        vin: newOrder.vin,
+        vehicleName: newOrder.vehicleName,
+        customerName: newOrder.customerName,
+        email: newOrder.email,
+        phone: newOrder.phone,
+        packageName: newOrder.packageName,
+        packageId: newOrder.packageId,
+        amount: newOrder.amount,
+        paymentMethod: newOrder.paymentMethod,
+        deliveryTime: newOrder.deliveryTime || plan.deliveryTime || '6 HOURS DELIVERY',
+        createdAt: newOrder.createdAt,
+      });
+      setShowSuccessModal(true);
     } catch (err: any) {
       setIsProcessing(false);
       setPaymentError({
@@ -361,7 +400,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       `PAYPAL-${Date.now()}`;
 
     try {
-      adminStore.saveOrder({
+      const newOrder = adminStore.saveOrder({
         vin: report.specs.vin,
         vehicleName: `${report.specs.year} ${report.specs.make} ${report.specs.model}`.trim(),
         customerName: fullName.trim() || details?.payer?.name?.given_name || 'Verified Customer',
@@ -371,9 +410,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         packageId: plan.id,
         packageName: plan.name,
         amount: plan.price,
+        deliveryTime: plan.deliveryTime || '6 HOURS DELIVERY',
         paymentMethod: `PayPal Smart Checkout [${captureId}]`,
         paymentStatus: 'Paid',
-        deliveryStatus: 'Emailed & Completed',
+        deliveryStatus: 'Pending Manual Send',
         reportSummary: {
           specsFound: report.recordsFoundCount || 48,
           titleStatus: 'Clean Title (NMVTIS Verified)',
@@ -381,22 +421,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           score: report.overallScore || 89,
         },
       });
+
+      setConfirmedOrder({
+        orderNumber: newOrder.orderNumber,
+        vin: newOrder.vin,
+        vehicleName: newOrder.vehicleName,
+        customerName: newOrder.customerName,
+        email: newOrder.email,
+        phone: newOrder.phone,
+        packageName: newOrder.packageName,
+        packageId: newOrder.packageId,
+        amount: newOrder.amount,
+        paymentMethod: newOrder.paymentMethod,
+        deliveryTime: newOrder.deliveryTime || plan.deliveryTime || '6 HOURS DELIVERY',
+        createdAt: newOrder.createdAt,
+      });
+      setShowSuccessModal(true);
     } catch (err) {
       console.warn('Checkout order save notice:', err);
     }
-
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.6 },
-      });
-    } catch {
-      // fallback
-    }
-
-    onPaymentSuccess(plan.id);
-    onClose();
   };
 
   // 3. Developer Sandbox Simulator
@@ -406,7 +449,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setProcessingMethod(`${methodName} (Test Sandbox)`);
 
     try {
-      adminStore.saveOrder({
+      const newOrder = adminStore.saveOrder({
         vin: report.specs.vin,
         vehicleName: `${report.specs.year} ${report.specs.make} ${report.specs.model}`.trim(),
         customerName: fullName.trim(),
@@ -416,9 +459,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         packageId: plan.id,
         packageName: plan.name,
         amount: plan.price,
+        deliveryTime: plan.deliveryTime || '6 HOURS DELIVERY',
         paymentMethod: `${methodName} [Dev Simulator]`,
         paymentStatus: 'Paid',
-        deliveryStatus: 'Emailed & Completed',
+        deliveryStatus: 'Pending Manual Send',
         reportSummary: {
           specsFound: report.recordsFoundCount || 48,
           titleStatus: 'Clean Title (NMVTIS Verified)',
@@ -426,24 +470,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           score: report.overallScore || 89,
         },
       });
+
+      setIsProcessing(false);
+      setConfirmedOrder({
+        orderNumber: newOrder.orderNumber,
+        vin: newOrder.vin,
+        vehicleName: newOrder.vehicleName,
+        customerName: newOrder.customerName,
+        email: newOrder.email,
+        phone: newOrder.phone,
+        packageName: newOrder.packageName,
+        packageId: newOrder.packageId,
+        amount: newOrder.amount,
+        paymentMethod: newOrder.paymentMethod,
+        deliveryTime: newOrder.deliveryTime || plan.deliveryTime || '6 HOURS DELIVERY',
+        createdAt: newOrder.createdAt,
+      });
+      setShowSuccessModal(true);
     } catch (err) {
       console.warn('Checkout order save notice:', err);
-    }
-
-    setTimeout(() => {
       setIsProcessing(false);
-      try {
-        confetti({
-          particleCount: 80,
-          spread: 60,
-          origin: { y: 0.6 },
-        });
-      } catch {
-        // fallback
-      }
-      onPaymentSuccess(plan.id);
-      onClose();
-    }, 1200);
+    }
   };
 
   return (

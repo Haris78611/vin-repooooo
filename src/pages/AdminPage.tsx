@@ -221,7 +221,48 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     return log.type === emailLogFilter;
   });
 
-  // Order Actions
+  // Order Actions & Payment Status Management
+  const handleUpdatePaymentStatus = (orderId: string, status: string) => {
+    adminStore.updateOrderStatus(orderId, status);
+    setOrders(adminStore.getOrders());
+    showNotification(`Payment status updated to "${status}" for Order`);
+    if (selectedOrder && selectedOrder.id === orderId) {
+      setSelectedOrder({ ...selectedOrder, paymentStatus: status });
+    }
+  };
+
+  const handleUpdateDeliveryStatus = (orderId: string, status: string) => {
+    adminStore.updateOrderStatus(orderId, undefined, status);
+    setOrders(adminStore.getOrders());
+    showNotification(`Delivery status updated to "${status}"`);
+    if (selectedOrder && selectedOrder.id === orderId) {
+      setSelectedOrder({ ...selectedOrder, deliveryStatus: status });
+    }
+  };
+
+  // Manual Dispatch State & Handler
+  const [manualSendOrder, setManualSendOrder] = useState<ReportOrder | null>(null);
+  const [manualSendNote, setManualSendNote] = useState('');
+  const [isSendingManualReport, setIsSendingManualReport] = useState(false);
+
+  const handleDispatchManualReport = async (order: ReportOrder) => {
+    setIsSendingManualReport(true);
+    const res = await adminStore.dispatchManualReportEmail(order.id, manualSendNote.trim() || undefined);
+    setIsSendingManualReport(false);
+    if (res.success) {
+      setOrders(adminStore.getOrders());
+      setEmailLogs(adminStore.getEmailLogs());
+      setManualSendOrder(null);
+      setManualSendNote('');
+      showNotification(`Vehicle report dispatched to ${order.email}! Marked as "Delivered & Emailed".`);
+      if (selectedOrder && selectedOrder.id === order.id) {
+        setSelectedOrder({ ...selectedOrder, deliveryStatus: 'Delivered & Emailed' });
+      }
+    } else {
+      showNotification(`Delivery error: ${res.message || 'Check email configuration.'}`);
+    }
+  };
+
   const handleResendReportEmail = (order: ReportOrder) => {
     adminStore.sendEmail({
       from: `${emailSettings.senderName} <${emailSettings.adminEmail}>`,
@@ -1139,47 +1180,91 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                             {order.mileage || '—'} mi
                           </td>
 
-                          {/* Package */}
+                          {/* Package & Delivery Window */}
                           <td className="py-4 px-4 whitespace-nowrap">
                             <span className="font-bold text-slate-900 block">{order.packageName}</span>
-                            <span className="text-[11px] font-mono text-slate-500">
+                            <span className="text-[11px] font-mono text-slate-500 block">
                               ${order.amount.toFixed(2)}
                             </span>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 mt-1">
+                              <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span>{order.deliveryTime || '6 Hours'}</span>
+                            </span>
                           </td>
 
-                          {/* Payment */}
+                          {/* Payment Channel & Interactive Status Updater */}
                           <td className="py-4 px-4 whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <Check className="w-3 h-3" />
+                            <div className="text-[11px] text-slate-600 font-medium mb-1 truncate max-w-[150px]" title={order.paymentMethod}>
                               {order.paymentMethod}
-                            </span>
+                            </div>
+                            <select
+                              value={order.paymentStatus || 'Paid'}
+                              onChange={(e) => handleUpdatePaymentStatus(order.id, e.target.value)}
+                              className={`text-[11px] font-bold px-2 py-1 rounded-lg border cursor-pointer transition-colors shadow-2xs ${
+                                order.paymentStatus === 'Paid'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                  : order.paymentStatus === 'Pending'
+                                  ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                  : order.paymentStatus === 'Failed'
+                                  ? 'bg-rose-50 text-rose-800 border-rose-300'
+                                  : order.paymentStatus === 'Refunded'
+                                  ? 'bg-slate-100 text-slate-700 border-slate-300'
+                                  : order.paymentStatus === 'Disputed'
+                                  ? 'bg-purple-50 text-purple-800 border-purple-300'
+                                  : 'bg-sky-50 text-sky-800 border-sky-300'
+                              }`}
+                              title="Update Payment Status by Admin"
+                            >
+                              <option value="Paid">✓ Paid</option>
+                              <option value="Pending">⏳ Pending</option>
+                              <option value="Failed">✕ Failed / Issue</option>
+                              <option value="Refunded">↩ Refunded</option>
+                              <option value="Disputed">⚠ Disputed</option>
+                              <option value="Manual Verified">★ Manual Verified</option>
+                            </select>
                           </td>
 
-                          {/* Delivery Status */}
+                          {/* Delivery Status & Interactive Updater */}
                           <td className="py-4 px-4 whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                              <Mail className="w-3 h-3" />
-                              {order.deliveryStatus}
-                            </span>
+                            <select
+                              value={order.deliveryStatus || 'Pending Manual Send'}
+                              onChange={(e) => handleUpdateDeliveryStatus(order.id, e.target.value)}
+                              className={`text-[11px] font-bold px-2 py-1 rounded-lg border cursor-pointer transition-colors shadow-2xs ${
+                                order.deliveryStatus === 'Delivered & Emailed' || order.deliveryStatus === 'Emailed & Completed'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                  : order.deliveryStatus === 'Pending Manual Send'
+                                  ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                  : order.deliveryStatus === 'Processing Dispatch'
+                                  ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                  : 'bg-rose-50 text-rose-800 border-rose-300'
+                              }`}
+                              title="Update Delivery Status"
+                            >
+                              <option value="Pending Manual Send">⏳ Pending Manual Send</option>
+                              <option value="Delivered & Emailed">✓ Delivered & Emailed</option>
+                              <option value="Processing Dispatch">⚡ Processing Dispatch</option>
+                              <option value="Failed">✕ Failed</option>
+                            </select>
                           </td>
 
                           {/* Actions */}
                           <td className="py-4 px-4 sm:px-6 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
+                                onClick={() => setManualSendOrder(order)}
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-colors cursor-pointer shadow-xs flex items-center gap-1"
+                                title="Send official report manually to customer email"
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>Send Report</span>
+                              </button>
+
+                              <button
                                 onClick={() => setSelectedOrder(order)}
                                 className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                                 title="Inspect Order Details"
                               >
                                 Inspect
-                              </button>
-
-                              <button
-                                onClick={() => handleResendReportEmail(order)}
-                                className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-[11px] transition-colors cursor-pointer"
-                                title="Resend PDF to customer email"
-                              >
-                                Resend
                               </button>
 
                               {onViewReportByVin && (
@@ -1201,10 +1286,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               </div>
             </div>
 
-            {/* Inspect Modal */}
+            {/* Inspect Modal with In-Modal Payment & Delivery Status Update */}
             {selectedOrder && (
               <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-6 shadow-2xl animate-scaleUp">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-6 shadow-2xl animate-scaleUp max-h-[90vh] overflow-y-auto">
                   <div className="flex items-center justify-between pb-4 border-b border-slate-200">
                     <div>
                       <span className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">
@@ -1252,10 +1337,17 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                       </div>
                     </div>
 
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                    {/* Order Financials & Delivery Deadline */}
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500">Package Selected:</span>
                         <span className="font-bold text-slate-900">{selectedOrder.packageName}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Target Delivery Window:</span>
+                        <span className="font-black text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md">
+                          {selectedOrder.deliveryTime || '6 Hours'}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500">Charge Total:</span>
@@ -1267,9 +1359,37 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                         <span className="text-slate-500">Payment Channel:</span>
                         <span className="font-semibold text-emerald-700">{selectedOrder.paymentMethod}</span>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Email Delivery:</span>
-                        <span className="font-semibold text-blue-700">{selectedOrder.deliveryStatus}</span>
+
+                      {/* Admin Interactive Status Controls inside Modal */}
+                      <div className="pt-2 border-t border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-600 font-bold">Payment Status (Admin):</span>
+                          <select
+                            value={selectedOrder.paymentStatus || 'Paid'}
+                            onChange={(e) => handleUpdatePaymentStatus(selectedOrder.id, e.target.value)}
+                            className="text-xs font-bold px-2.5 py-1 rounded-lg border border-slate-300 bg-white cursor-pointer"
+                          >
+                            <option value="Paid">✓ Paid</option>
+                            <option value="Pending">⏳ Pending</option>
+                            <option value="Failed">✕ Failed / Issue</option>
+                            <option value="Refunded">↩ Refunded</option>
+                            <option value="Disputed">⚠ Disputed</option>
+                            <option value="Manual Verified">★ Manual Verified</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-600 font-bold">Delivery Status (Admin):</span>
+                          <select
+                            value={selectedOrder.deliveryStatus || 'Pending Manual Send'}
+                            onChange={(e) => handleUpdateDeliveryStatus(selectedOrder.id, e.target.value)}
+                            className="text-xs font-bold px-2.5 py-1 rounded-lg border border-slate-300 bg-white cursor-pointer"
+                          >
+                            <option value="Pending Manual Send">⏳ Pending Manual Send</option>
+                            <option value="Delivered & Emailed">✓ Delivered & Emailed</option>
+                            <option value="Processing Dispatch">⚡ Processing Dispatch</option>
+                            <option value="Failed">✕ Failed</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
 
@@ -1304,16 +1424,112 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
                   <div className="flex items-center justify-end gap-3 pt-2">
                     <button
-                      onClick={() => handleResendReportEmail(selectedOrder)}
-                      className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-colors cursor-pointer shadow-xs"
+                      onClick={() => {
+                        const target = selectedOrder;
+                        setSelectedOrder(null);
+                        setManualSendOrder(target);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
                     >
-                      Resend PDF Report to Customer
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Dispatch Manual Report</span>
+                    </button>
+                    <button
+                      onClick={() => handleResendReportEmail(selectedOrder)}
+                      className="px-3.5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-colors cursor-pointer shadow-xs"
+                    >
+                      Resend Email
                     </button>
                     <button
                       onClick={() => setSelectedOrder(null)}
                       className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                     >
                       Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Manual Report Dispatch Modal (Direct native PHP mail to customer) */}
+            {manualSendOrder && (
+              <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-5 shadow-2xl animate-scaleUp">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                    <div>
+                      <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">
+                        Manual Report Dispatch Desk
+                      </span>
+                      <h3 className="text-lg font-black text-slate-900">
+                        Send Official Report to Customer
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => setManualSendOrder(null)}
+                      className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Customer:</span>
+                      <span className="font-bold text-slate-900">{manualSendOrder.customerName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Recipient Email:</span>
+                      <span className="font-mono font-bold text-slate-900">{manualSendOrder.email}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Vehicle / VIN:</span>
+                      <span className="font-mono text-slate-900">{manualSendOrder.vin}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Package / Delivery:</span>
+                      <span className="font-bold text-amber-700">{manualSendOrder.packageName} ({manualSendOrder.deliveryTime || '6 Hours'})</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Optional Administrator Forensic Note (Included in Email):
+                    </label>
+                    <textarea
+                      value={manualSendNote}
+                      onChange={(e) => setManualSendNote(e.target.value)}
+                      placeholder="e.g., Official NMVTIS state title records verified clean across CA and TX archives. No salvage or total loss records found."
+                      rows={3}
+                      className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      disabled={isSendingManualReport}
+                      onClick={() => handleDispatchManualReport(manualSendOrder)}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-md flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isSendingManualReport ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Dispatching...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Dispatch Report via /send-mail.php</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSendingManualReport}
+                      onClick={() => setManualSendOrder(null)}
+                      className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                    >
+                      Cancel
                     </button>
                   </div>
                 </div>

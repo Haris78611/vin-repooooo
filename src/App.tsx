@@ -24,7 +24,7 @@ import { ReviewOrderPage } from './pages/ReviewOrderPage';
 import { decodeVin } from './services/vinService';
 import { SAMPLE_BMW_Z3 } from './data/sampleVehicles';
 import { FullVehicleReport, ReportPlanId } from './types';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { adminStore } from './services/adminStore';
 
@@ -53,6 +53,9 @@ export default function App() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [unlockedPlan, setUnlockedPlan] = useState<ReportPlanId | null>(null);
   const [apiErrorMessage, setApiErrorMessage] = useState<string | null>(null);
+
+  // Search notification when redirected from pricing page
+  const [searchPromptNotification, setSearchPromptNotification] = useState<string | null>(null);
 
   // Checkout modal
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -213,6 +216,9 @@ export default function App() {
       return;
     }
 
+    // Clear notification prompt when search begins
+    setSearchPromptNotification(null);
+
     setSearchingVin(cleanQuery);
     setSearchingType(type);
     setSearchingState(state);
@@ -297,6 +303,22 @@ export default function App() {
     navigateTo('checkout');
   };
 
+  // When user selects package from Pricing Page:
+  // Redirect to home page and show notification prompt:
+  // "Please perform a vehicle search before choosing your report package."
+  const handleSelectPlanFromPricing = (planId: ReportPlanId) => {
+    setSelectedPlanForCheckout(planId);
+    setSearchPromptNotification('Please perform a vehicle search before choosing your report package.');
+    navigateTo('home');
+    setTimeout(() => {
+      const input = document.querySelector('input[placeholder*="VIN"]') || document.querySelector('input[type="text"]');
+      if (input instanceof HTMLElement) {
+        input.focus();
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 150);
+  };
+
   const handlePaymentSuccess = (planId: ReportPlanId) => {
     setIsUnlocked(true);
     setUnlockedPlan(planId);
@@ -341,6 +363,28 @@ export default function App() {
         />
       )}
 
+      {/* Top Notification Banner (When redirected from Pricing Page to perform search first) */}
+      {searchPromptNotification && (
+        <div className="relative z-40 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 font-bold px-4 py-3.5 shadow-xl border-b border-amber-300 animate-slideDown">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 text-xs sm:text-sm font-black tracking-tight">
+              <span className="p-1.5 rounded-full bg-black/10 shrink-0">
+                <AlertCircle className="w-4 h-4 text-black" />
+              </span>
+              <span>{searchPromptNotification}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSearchPromptNotification(null)}
+              className="p-1 rounded-lg hover:bg-black/15 text-black/80 hover:text-black transition-colors cursor-pointer shrink-0"
+              aria-label="Dismiss notification"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Page Routing Switch */}
       <main className="flex-1 w-full">
         {/* HOME PAGE: Complete home sections matching uploaded screenshots */}
@@ -379,13 +423,6 @@ export default function App() {
             state={notFoundData?.state || searchingState}
             errorMessage={notFoundData?.errorMessage}
             onNewSearch={handleSearch}
-            onViewSampleReport={() => {
-              setCurrentReport(SAMPLE_BMW_Z3);
-              setIsUnlocked(false);
-              setUnlockedPlan(null);
-              setNotFoundData(null);
-              navigateTo('report');
-            }}
             onBackToHome={() => navigateTo('home')}
             onNavigate={(page) => navigateTo(page as PageView)}
             isLoading={isLoading}
@@ -413,7 +450,7 @@ export default function App() {
         {/* DEDICATED PRICING PAGE */}
         {currentPage === 'pricing' && (
           <PricingPage
-            onSelectPlan={handleSelectPlan}
+            onSelectPlan={handleSelectPlanFromPricing}
             onNavigate={(page) => navigateTo(page as PageView)}
           />
         )}

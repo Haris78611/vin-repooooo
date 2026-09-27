@@ -1,5 +1,8 @@
 import { ReportPlanId } from '../types';
 
+export type OrderPaymentStatus = 'Paid' | 'Pending' | 'Failed' | 'Refunded' | 'Disputed' | 'Manual Verified';
+export type OrderDeliveryStatus = 'Pending Manual Send' | 'Delivered & Emailed' | 'Processing Dispatch' | 'Failed';
+
 export interface ReportOrder {
   id: string;
   orderNumber: string;
@@ -13,8 +16,9 @@ export interface ReportOrder {
   packageName: string;
   amount: number;
   paymentMethod: string;
-  paymentStatus: 'Paid' | 'Pending' | 'Refunded';
-  deliveryStatus: 'Emailed & Completed' | 'Processing Dispatch' | 'Failed';
+  paymentStatus: OrderPaymentStatus | string;
+  deliveryStatus: OrderDeliveryStatus | string;
+  deliveryTime?: string;
   createdAt: string;
   reportSummary?: {
     specsFound: number;
@@ -307,10 +311,11 @@ const INITIAL_ORDERS: ReportOrder[] = [
     packageId: 'silver',
     packageName: 'SILVER PACKAGE',
     amount: 69.99,
+    deliveryTime: '6 HOURS DELIVERY',
     paymentMethod: 'Stripe Link',
     paymentStatus: 'Paid',
-    deliveryStatus: 'Emailed & Completed',
-    createdAt: '2026-09-25 04:32 AM',
+    deliveryStatus: 'Pending Manual Send',
+    createdAt: '2026-09-27 06:32 AM',
     reportSummary: {
       specsFound: 48,
       titleStatus: 'Clean (TX, CA)',
@@ -330,10 +335,11 @@ const INITIAL_ORDERS: ReportOrder[] = [
     packageId: 'gold',
     packageName: 'GOLD PACKAGE',
     amount: 99.99,
+    deliveryTime: 'INSTANT 1-HOUR DELIVERY',
     paymentMethod: 'Credit Card (Stripe)',
     paymentStatus: 'Paid',
-    deliveryStatus: 'Emailed & Completed',
-    createdAt: '2026-09-25 03:15 AM',
+    deliveryStatus: 'Delivered & Emailed',
+    createdAt: '2026-09-26 03:15 AM',
     reportSummary: {
       specsFound: 52,
       titleStatus: 'Clean (FL)',
@@ -353,10 +359,11 @@ const INITIAL_ORDERS: ReportOrder[] = [
     packageId: 'standard',
     packageName: 'STANDARD PACKAGE',
     amount: 39.99,
+    deliveryTime: '12 HOURS DELIVERY',
     paymentMethod: 'PayPal Express',
     paymentStatus: 'Paid',
-    deliveryStatus: 'Emailed & Completed',
-    createdAt: '2026-09-24 11:42 PM',
+    deliveryStatus: 'Pending Manual Send',
+    createdAt: '2026-09-26 11:42 PM',
     reportSummary: {
       specsFound: 44,
       titleStatus: 'Clean (WA)',
@@ -376,10 +383,11 @@ const INITIAL_ORDERS: ReportOrder[] = [
     packageId: 'dealer',
     packageName: 'DEALER PACKAGE',
     amount: 149.99,
+    deliveryTime: 'INSTANT PRIORITY',
     paymentMethod: 'PayPal Pay Later',
     paymentStatus: 'Paid',
-    deliveryStatus: 'Emailed & Completed',
-    createdAt: '2026-09-24 08:20 PM',
+    deliveryStatus: 'Delivered & Emailed',
+    createdAt: '2026-09-25 08:20 PM',
     reportSummary: {
       specsFound: 40,
       titleStatus: 'Clean (NY)',
@@ -633,23 +641,16 @@ class AdminStore {
     // Auto Dispatch Notification Emails for Orders
     try {
       const emailSettings = this.getEmailSettings();
-      // Dispatch order report to customer
-      this.sendEmail({
-        from: `${emailSettings.senderName} <${emailSettings.adminEmail}>`,
-        to: newOrder.email,
-        subject: `Your Vehicle History Report is Ready [Order #${newOrder.orderNumber}] - VIN ${newOrder.vin}`,
-        body: `Dear ${newOrder.customerName},\n\nThank you for purchasing the ${newOrder.packageName} ($${newOrder.amount.toFixed(2)}) for vehicle VIN: ${newOrder.vin}.\n\nYour verified federal and NMVTIS records report has been compiled and is attached. You can also view and download your full PDF anytime from your customer dashboard.\n\nBest regards,\n${emailSettings.senderName}\nInquiries: ${emailSettings.adminEmail}`,
-        type: 'order_report_dispatch',
-        orderId: newOrder.id,
-      });
+      // NOTE: Per policy, DO NOT send auto report emails to customer.
+      // Admin reviews official federal records and sends report manually within delivery time.
 
-      // Dispatch alert to Admin Email
+      // Dispatch alert to Admin Email only (if notifications enabled)
       if (emailSettings.orderNotificationsEnabled) {
         this.sendEmail({
           from: `System Notification <no-reply@wheelclarify.com>`,
           to: emailSettings.adminEmail,
-          subject: `[New Paid Order #${newOrder.orderNumber}] $${newOrder.amount.toFixed(2)} - ${newOrder.customerName}`,
-          body: `New vehicle history report order received:\n\nOrder Number: ${newOrder.orderNumber}\nCustomer: ${newOrder.customerName} (${newOrder.email})\nPhone: ${newOrder.phone || 'N/A'}\nVIN: ${newOrder.vin}\nPackage: ${newOrder.packageName}\nAmount: $${newOrder.amount.toFixed(2)}\nPayment Method: ${newOrder.paymentMethod}\nStatus: Paid & Dispatched`,
+          subject: `[New Order #${newOrder.orderNumber}] $${newOrder.amount.toFixed(2)} - ${newOrder.packageName} (VIN: ${newOrder.vin})`,
+          body: `New vehicle history report order received:\n\nOrder Number: ${newOrder.orderNumber}\nCustomer: ${newOrder.customerName} (${newOrder.email})\nPhone: ${newOrder.phone || 'N/A'}\nVIN: ${newOrder.vin}\nPackage: ${newOrder.packageName}\nTarget Delivery Time: ${newOrder.deliveryTime || '6 Hours'}\nAmount: $${newOrder.amount.toFixed(2)}\nPayment Method: ${newOrder.paymentMethod}\nPayment Status: ${newOrder.paymentStatus}\nDelivery Status: ${newOrder.deliveryStatus}\n\nACTION REQUIRED: Admin must manually compile records and dispatch report to customer within ${newOrder.deliveryTime || '6 Hours'}.`,
           type: 'order_report_dispatch',
           orderId: newOrder.id,
         });
@@ -661,14 +662,52 @@ class AdminStore {
     return newOrder;
   }
 
-  updateOrderStatus(orderId: string, status: ReportOrder['paymentStatus']): void {
+  updateOrderStatus(
+    orderId: string,
+    paymentStatus?: OrderPaymentStatus | string,
+    deliveryStatus?: OrderDeliveryStatus | string
+  ): void {
     const orders = this.getOrders();
-    const updated = orders.map((o) => (o.id === orderId ? { ...o, paymentStatus: status } : o));
+    const updated = orders.map((o) => {
+      if (o.id === orderId) {
+        return {
+          ...o,
+          ...(paymentStatus !== undefined ? { paymentStatus } : {}),
+          ...(deliveryStatus !== undefined ? { deliveryStatus } : {}),
+        };
+      }
+      return o;
+    });
     try {
       localStorage.setItem(STORAGE_ORDERS_KEY, JSON.stringify(updated));
+      window.dispatchEvent(new Event('wc_orders_updated'));
     } catch {
       // ignore
     }
+  }
+
+  async dispatchManualReportEmail(
+    orderId: string,
+    customNote?: string
+  ): Promise<{ success: boolean; message: string }> {
+    const order = this.getOrders().find((o) => o.id === orderId);
+    if (!order) return { success: false, message: 'Order not found' };
+
+    const emailSettings = this.getEmailSettings();
+    const subject = `Your Official Vehicle History Report is Ready [Order #${order.orderNumber}] - VIN: ${order.vin}`;
+    const body = `Dear ${order.customerName},\n\nYour official comprehensive vehicle history audit for ${order.vehicleName} (VIN: ${order.vin}) has been reviewed, certified, and is now ready.\n\nPackage: ${order.packageName}\nOrder Reference: ${order.orderNumber}\nAmount Paid: $${order.amount.toFixed(2)}\nTarget Delivery Window: ${order.deliveryTime || '6 Hours'}\n\n${customNote ? `Special Administrator Note:\n${customNote}\n\n` : ''}Your verified federal and NMVTIS records report has been compiled and certified by our automotive auditing team. You can download and inspect your full records anytime, or reply directly to this email if you require any specialized registry inquiries.\n\nBest regards,\n${emailSettings.senderName}\nInquiries: ${emailSettings.adminEmail}`;
+
+    const log = this.sendEmail({
+      from: `${emailSettings.senderName} <${emailSettings.adminEmail}>`,
+      to: order.email,
+      subject,
+      body,
+      type: 'order_report_dispatch',
+      orderId: order.id,
+    });
+
+    this.updateOrderStatus(order.id, undefined, 'Delivered & Emailed');
+    return { success: true, message: `Report dispatched to ${order.email} (Log: ${log.id})` };
   }
 
   // Tickets
