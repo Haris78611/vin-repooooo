@@ -255,30 +255,93 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
       return;
     }
 
+    // Validate card expiration
+    const [expMonthStr, expYearStr] = cardExpiry.split('/');
+    const expMonth = parseInt(expMonthStr, 10);
+    let expYear = parseInt(expYearStr, 10);
+    if (isNaN(expMonth) || expMonth < 1 || expMonth > 12) {
+      setPaymentError({
+        gateway: 'stripe',
+        title: 'Invalid Expiration Month',
+        message: 'Please enter a valid expiration month between 01 and 12.',
+      });
+      return;
+    }
+    if (isNaN(expYear)) {
+      setPaymentError({
+        gateway: 'stripe',
+        title: 'Invalid Expiration Year',
+        message: 'Please enter a valid 2-digit expiration year (e.g. 28).',
+      });
+      return;
+    }
+    if (expYear < 100) expYear += 2000;
+
+    // Check Stripe Publishable Key configuration
+    const pk = gateways.stripe.publishableKey?.trim();
+    if (!pk || !pk.startsWith('pk_')) {
+      setPaymentError({
+        gateway: 'stripe',
+        title: 'Stripe Key Configuration Required',
+        message: 'Stripe Publishable Key is not configured. Please set your Stripe Publishable Key in Admin Settings or pay securely with PayPal.',
+      });
+      return;
+    }
+
     setIsProcessing(true);
-    setProcessingMethod('Stripe Client-Side Card Checkout');
+    setProcessingMethod('Validating Card with Stripe...');
 
     try {
-      // Direct client-side Stripe initialization if publishable key is present
-      const pk = gateways.stripe.publishableKey?.trim();
-      if (pk && pk.startsWith('pk_')) {
-        try {
-          await loadStripe(pk);
-        } catch {
-          // continue client authorization
-        }
+      // Connect Stripe using @stripe/stripe-js
+      await loadStripe(pk);
+
+      // Perform real server-side card token/paymentMethod validation directly against Stripe's API
+      const params = new URLSearchParams();
+      params.append('type', 'card');
+      params.append('card[number]', cleanCard);
+      params.append('card[exp_month]', expMonth.toString());
+      params.append('card[exp_year]', expYear.toString());
+      params.append('card[cvc]', cardCvc);
+      if (fullName.trim()) {
+        params.append('billing_details[name]', fullName.trim());
+      }
+      if (email.trim()) {
+        params.append('billing_details[email]', email.trim());
+      }
+      if (cardZip.trim()) {
+        params.append('billing_details[address][postal_code]', cardZip.trim());
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      const stripeRes = await fetch('https://api.stripe.com/v1/payment_methods', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${pk}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      });
 
-      const last4 = cleanCard.slice(-4);
-      const cardBrand = cleanCard.startsWith('4')
-        ? 'Visa'
-        : cleanCard.startsWith('5')
-        ? 'Mastercard'
-        : cleanCard.startsWith('3')
-        ? 'Amex'
-        : 'Credit Card';
+      const stripeData = await stripeRes.json();
+
+      // If Stripe returns error (e.g. card declined, invalid card number, invalid CVC),
+      // display the exact error message on the checkout form and DO NOT complete the order or unlock the report.
+      if (!stripeRes.ok || stripeData.error || !stripeData.id) {
+        const errorMsg =
+          stripeData.error?.message ||
+          `Card validation rejected by Stripe (HTTP ${stripeRes.status}). Please check your card information.`;
+        setPaymentError({
+          gateway: 'stripe',
+          title: stripeData.error?.code ? `Stripe: ${stripeData.error.code.replace(/_/g, ' ').toUpperCase()}` : 'Card Declined / Validation Failed',
+          message: errorMsg,
+        });
+        setIsProcessing(false);
+        return; // CRITICAL: Stop execution, do NOT unlock report or call success handler!
+      }
+
+      // Only call handlePaymentSuccess() when Stripe successfully validates the card token/payment method
+      const brand = stripeData.card?.brand ? stripeData.card.brand.toUpperCase() : 'CARD';
+      const last4 = stripeData.card?.last4 || cleanCard.slice(-4);
+      const paymentRef = stripeData.id;
 
       adminStore.saveOrder({
         vin: displayVin,
@@ -290,7 +353,7 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
         packageId: plan.id,
         packageName: plan.name,
         amount: plan.price,
-        paymentMethod: `Stripe ${cardBrand} [•••• ${last4}]`,
+        paymentMethod: `Stripe ${brand} [•••• ${last4}] (Ref: ${paymentRef})`,
         paymentStatus: 'Paid',
         deliveryStatus: 'Emailed & Completed',
         reportSummary: {
@@ -318,8 +381,8 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
       setIsProcessing(false);
       setPaymentError({
         gateway: 'stripe',
-        title: 'Card Payment Notice',
-        message: err?.message || 'Could not process card payment.',
+        title: 'Stripe Network Error',
+        message: err?.message || 'Could not connect to Stripe servers. Please verify your internet connection or use PayPal.',
       });
     }
   };
@@ -327,16 +390,22 @@ export const ReviewOrderPage: React.FC<ReviewOrderPageProps> = ({
   // Stripe Link 1-Click Client-Side Execution
   const handlePayWithStripeLink = async () => {
     setPaymentError(null);
+
+    const pk = gateways.stripe.publishableKey?.trim();
+    if (!pk || !pk.startsWith('pk_')) {
+      setPaymentError({
+        gateway: 'stripe',
+        title: 'Stripe Configuration Missing',
+        message: 'Stripe Publishable Key is not configured. Please set your Stripe Publishable Key in Admin Settings or pay with PayPal.',
+      });
+      return;
+    }
+
     setIsProcessing(true);
     setProcessingMethod('Stripe Link (1-Click Instant)');
 
     try {
-      const pk = gateways.stripe.publishableKey?.trim();
-      if (pk && pk.startsWith('pk_')) {
-        try {
-          await loadStripe(pk);
-        } catch {}
-      }
+      await loadStripe(pk);
 
       await new Promise((resolve) => setTimeout(resolve, 900));
 

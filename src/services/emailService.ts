@@ -68,8 +68,44 @@ export async function sendPhpMail(payload: SendMailPhpPayload): Promise<SendMail
   return data;
 }
 
+export async function sendAdminReply(payload: {
+  ticketId: string;
+  to: string;
+  customerName?: string;
+  subject: string;
+  reply: string;
+  adminEmail?: string;
+}): Promise<SendMailPhpResponse> {
+  try {
+    const response = await fetch('/reply-mail.php', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (response.ok) {
+      const data: SendMailPhpResponse = await response.json();
+      return data;
+    }
+  } catch (err) {
+    console.warn('reply-mail.php fallback to send-mail.php', err);
+  }
+
+  return await sendPhpMail({
+    email: payload.to,
+    name: payload.customerName || 'Customer',
+    subject: payload.subject,
+    message: payload.reply,
+    category: 'Admin Reply',
+    ticketId: payload.ticketId,
+  });
+}
+
 export const emailService = {
   sendPhpMail,
+  sendAdminReply,
   async sendTestPing(targetEmail: string, senderName: string) {
     try {
       const res = await sendPhpMail({

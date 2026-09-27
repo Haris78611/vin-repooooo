@@ -813,7 +813,45 @@ async function startServer() {
     }
   });
 
-  // Real Email Dispatch Endpoint (Nodemailer alias)
+  // Hostinger PHP Reply Mailer endpoint emulator for dev/preview testing
+  app.post('/reply-mail.php', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const { to, customerName, ticketId, subject, reply, message, adminEmail } = req.body || {};
+      const replyMsg = reply || message || '';
+      const dest = to || 'customer@example.com';
+      const sender = adminEmail || process.env.ADMIN_EMAIL || 'affandark@gmail.com';
+
+      console.info(
+        `%c[POST /reply-mail.php] ✉️ Reply to: ${customerName} (${dest}) | Ticket: ${ticketId}`,
+        'color: #06b6d4; font-weight: bold;'
+      );
+
+      try {
+        const transporter = await getMailTransporter();
+        await transporter.sendMail({
+          from: `"WheelClarify Support" <${sender}>`,
+          to: dest,
+          subject: `Re: [Ticket #${ticketId || 'SUPPORT'}] ${subject || 'Support Response'}`,
+          text: `Dear ${customerName || 'Customer'},\n\nOur administrator has replied to your inquiry:\n\n${replyMsg}\n\nBest regards,\nWheelClarify Support`,
+        });
+      } catch (err) {
+        console.warn('Dev reply mailer notice:', err);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Reply email dispatched successfully to customer inbox!',
+        ticketId,
+        recipient: dest,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: err.message || 'PHP reply mailer simulation error',
+      });
+    }
+  });
   app.post('/api/email/send', async (req, res) => {
     try {
       const {

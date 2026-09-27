@@ -517,14 +517,18 @@ const INITIAL_GATEWAY_SETTINGS: GatewaySettings = {
   stripe: {
     enabled: true,
     testMode: true,
-    publishableKey: 'pk_test_51MzSAMPLEKEY9428172WheelClarifyLiveSecured',
-    secretKey: 'sk_test_51MzSAMPLESECRET9428172SecuredKeyExample',
+    publishableKey: '',
+    secretKey: '',
+    connectionStatus: 'idle',
+    connectionMessage: 'Not verified. Enter your Stripe keys and click "Check Stripe Credentials".',
   },
   paypal: {
     enabled: true,
     sandboxMode: true,
-    publishableKey: 'BAA9248SAMPLECLIENTID_WheelClarifyPayPalGateway',
-    secretKey: 'EDK9248SAMPLESECRETKEY_WheelClarifyPayPalSecured',
+    publishableKey: '',
+    secretKey: '',
+    connectionStatus: 'idle',
+    connectionMessage: 'Not verified. Enter your PayPal keys and click "Check PayPal Credentials".',
   },
   stripeLink: {
     enabled: true,
@@ -848,20 +852,39 @@ class AdminStore {
       const data = localStorage.getItem(STORAGE_GATEWAYS_KEY);
       if (data) {
         const parsed = JSON.parse(data);
+
+        const stripeKey = (parsed.stripe?.secretKey || '').trim();
+        const stripeStatus =
+          parsed.stripe?.connectionStatus === 'connected' &&
+          stripeKey &&
+          !stripeKey.includes('SAMPLE')
+            ? 'connected'
+            : parsed.stripe?.connectionStatus || 'idle';
+
+        const paypalKey = (parsed.paypal?.secretKey || '').trim();
+        const paypalStatus =
+          parsed.paypal?.connectionStatus === 'connected' &&
+          paypalKey &&
+          !paypalKey.includes('SAMPLE')
+            ? 'connected'
+            : parsed.paypal?.connectionStatus || 'idle';
+
         return {
           ...INITIAL_GATEWAY_SETTINGS,
           ...parsed,
           stripe: {
             ...INITIAL_GATEWAY_SETTINGS.stripe,
             ...(parsed.stripe || {}),
-            publishableKey: parsed.stripe?.publishableKey || INITIAL_GATEWAY_SETTINGS.stripe.publishableKey,
-            secretKey: parsed.stripe?.secretKey || INITIAL_GATEWAY_SETTINGS.stripe.secretKey,
+            publishableKey: (parsed.stripe?.publishableKey || '').replace(/.*SAMPLE.*/, ''),
+            secretKey: (parsed.stripe?.secretKey || '').replace(/.*SAMPLE.*/, ''),
+            connectionStatus: stripeStatus,
           },
           paypal: {
             ...INITIAL_GATEWAY_SETTINGS.paypal,
             ...(parsed.paypal || {}),
-            publishableKey: parsed.paypal?.publishableKey || parsed.paypal?.clientId || INITIAL_GATEWAY_SETTINGS.paypal.publishableKey,
-            secretKey: parsed.paypal?.secretKey || INITIAL_GATEWAY_SETTINGS.paypal.secretKey,
+            publishableKey: (parsed.paypal?.publishableKey || parsed.paypal?.clientId || '').replace(/.*SAMPLE.*/, ''),
+            secretKey: (parsed.paypal?.secretKey || '').replace(/.*SAMPLE.*/, ''),
+            connectionStatus: paypalStatus,
           },
           stripeLink: {
             ...INITIAL_GATEWAY_SETTINGS.stripeLink,
@@ -977,23 +1000,26 @@ class AdminStore {
       'color: #3b82f6;'
     );
 
-    // Also asynchronously trigger real backend server email dispatch
+    // Asynchronously dispatch via Hostinger native PHP mail gateway (/send-mail.php)
     try {
-      fetch('/api/email/send', {
+      fetch('/send-mail.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
         body: JSON.stringify({
           to: newLog.to,
+          email: newLog.to,
           from: newLog.from,
+          name: settings.senderName || 'WheelClarify Support',
           subject: newLog.subject,
-          body: newLog.body,
+          message: newLog.body,
           type: newLog.type,
           ticketId: newLog.ticketId,
           orderId: newLog.orderId,
-          adminEmail: settings.adminEmail,
-          senderName: settings.senderName,
         }),
-      }).catch((e) => console.warn('Server mail notice:', e));
+      }).catch((e) => console.warn('Hostinger PHP mail dispatch notice:', e));
     } catch {
       // ignore
     }

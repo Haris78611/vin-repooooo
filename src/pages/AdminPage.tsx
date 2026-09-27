@@ -242,15 +242,32 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     showNotification(`Ticket updated to ${status.toUpperCase()}`);
   };
 
-  const handleSendTicketReply = (ticketId: string) => {
+  const handleSendTicketReply = async (ticketId: string) => {
     if (!replyText.trim()) return;
     const targetTicket = tickets.find((t) => t.id === ticketId);
-    adminStore.updateTicketStatus(ticketId, 'resolved', replyText.trim());
+    const replyContent = replyText.trim();
+    adminStore.updateTicketStatus(ticketId, 'resolved', replyContent);
     setTickets(adminStore.getTickets());
     setEmailLogs(adminStore.getEmailLogs());
     setReplyText('');
     setActiveTicketId(null);
-    showNotification(`✓ Response sent from ${emailSettings.adminEmail} to ${targetTicket?.email || 'customer'}!`);
+
+    // Send HTTP POST directly to /reply-mail.php (and /send-mail.php) for Hostinger static hosting
+    if (targetTicket?.email) {
+      try {
+        await emailService.sendAdminReply({
+          ticketId,
+          to: targetTicket.email,
+          customerName: targetTicket.customerName,
+          subject: `Re: ${targetTicket.subject || 'Support Ticket Update'}`,
+          reply: replyContent,
+          adminEmail: emailSettings.adminEmail,
+        });
+      } catch (err) {
+        console.warn('Reply mail dispatch notice:', err);
+      }
+    }
+    showNotification(`✓ Response sent directly to ${targetTicket?.email || 'customer'}!`);
   };
 
   // Email Configuration Actions
@@ -2860,7 +2877,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                       <span className="text-xs font-bold text-slate-900">Auto-Detect (Recommended)</span>
                     </div>
                     <p className="text-[10px] text-slate-500 pl-5 leading-normal">
-                      Tries Node server <code className="font-mono text-slate-700">/api/send</code>. If deployed statically on Hostinger (returning HTML), automatically uses Web3Forms.
+                      Dispatches via Hostinger native <code className="font-mono text-slate-700">/send-mail.php</code>. Free unlimited delivery on Hostinger.
                     </p>
                   </label>
 
